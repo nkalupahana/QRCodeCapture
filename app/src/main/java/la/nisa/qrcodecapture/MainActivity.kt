@@ -27,15 +27,23 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import io.github.cdimascio.dotenv.dotenv
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import la.nisa.qrcodecapture.ui.theme.QRCodeCaptureTheme
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import org.json.JSONObject
+import java.io.IOException
 
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var imageReader: ImageReader
     private var width: Int = 0
     private var height: Int = 0
@@ -52,7 +60,12 @@ class MainActivity : ComponentActivity() {
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
     private val scanner = BarcodeScanning.getClient(barcodeScannerOptions)
-    val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient()
+    private val env = dotenv {
+        directory = "/assets"
+        filename = "env"
+    }
+    private val jsonType = "application/json".toMediaType()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,7 +139,28 @@ class MainActivity : ComponentActivity() {
                         val data = it.rawValue
                         if (data != null && /*data.contains("bevitouchless.co") &&*/ data != lastSentUrl) {
                             println("New URL: $data")
-                            lastSentUrl = data;
+                            val jsonData: JSONObject = JSONObject()
+                            jsonData.put("token", env.get("SET_TOKEN"))
+                            jsonData.put(env.get("KEY"), data)
+
+                            println(jsonData.toString())
+                            val body = jsonData.toString().toRequestBody(jsonType)
+                            val request = Request.Builder()
+                                .url(env.get("KV_STORE_URL"))
+                                .post(body)
+                                .build()
+
+                            httpClient.newCall(request).enqueue(object : Callback {
+                                override fun onFailure(call: Call, e: IOException) {
+                                    println("Request failed!")
+                                    e.printStackTrace()
+                                }
+
+                                override fun onResponse(call: Call, response: Response) {
+                                    println("Response: ${response.isSuccessful}")
+                                }
+                            })
+                            lastSentUrl = data
                         }
                     }
                 }
