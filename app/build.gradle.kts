@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -9,7 +11,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "la.nisa.qrcodecapture"
+        applicationId = "com.example.qrcodecapture"
         minSdk = 28
         //noinspection ExpiredTargetSdkVersion
         targetSdk = 28
@@ -52,6 +54,8 @@ dependencies {
     implementation(libs.barcode.scanning)
     implementation(libs.okhttp)
     implementation(libs.dotenv.kotlin)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-crashlytics")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

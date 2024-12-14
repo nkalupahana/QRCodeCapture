@@ -82,13 +82,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             QRCodeCaptureTheme {
                 Scaffold(modifier = Modifier.padding(vertical = 32.dp, horizontal = 8.dp)) { innerPadding ->
-                    TakeScreenshot(
-                        modifier = Modifier.padding(innerPadding),
-                        onStartCapture = { startScreenCapture() }
-                    )
+                    Text("App running!", modifier = Modifier.padding(innerPadding))
                 }
             }
         }
+
+        startScreenCapture()
     }
 
     private val startMediaProjection = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -143,7 +142,6 @@ class MainActivity : ComponentActivity() {
                             jsonData.put("token", env.get("SET_TOKEN"))
                             jsonData.put(env.get("KEY"), data)
 
-                            println(jsonData.toString())
                             val body = jsonData.toString().toRequestBody(jsonType)
                             val request = Request.Builder()
                                 .url(env.get("KV_STORE_URL"))
