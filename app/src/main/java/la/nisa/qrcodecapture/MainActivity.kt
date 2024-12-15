@@ -15,10 +15,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -27,24 +25,11 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import io.github.cdimascio.dotenv.dotenv
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import la.nisa.qrcodecapture.ui.theme.QRCodeCaptureTheme
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import org.json.JSONObject
-import java.io.IOException
-
 
 class MainActivity : ComponentActivity() {
     private lateinit var imageReader: ImageReader
+    private val networkManager = NetworkManager()
     private var width: Int = 0
     private var height: Int = 0
     private var density: Int = 0
@@ -56,16 +41,11 @@ class MainActivity : ComponentActivity() {
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
             .build()
     }
+    private val scanner = BarcodeScanning.getClient(barcodeScannerOptions)
+
     private val mediaProjectionManager by lazy {
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
-    private val scanner = BarcodeScanning.getClient(barcodeScannerOptions)
-    private val httpClient = OkHttpClient()
-    private val env = dotenv {
-        directory = "/assets"
-        filename = "env"
-    }
-    private val jsonType = "application/json".toMediaType()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,9 +67,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        startScreenCapture()
+        // Start screen capture
+        startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
+    // Initialize image processing
     private val startMediaProjection = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             mediaProjection = mediaProjectionManager.getMediaProjection(result.resultCode, result.data!!)
@@ -97,26 +79,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startScreenCapture() {
-        startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+    private val throttledProcessImage = lifecycleScope.throttleLatest(this::processImage)
+    private fun startVirtualDisplay() {
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 32)
+        imageReader.setOnImageAvailableListener(throttledProcessImage, null)
+
+        virtualDisplay = mediaProjection?.createVirtualDisplay(
+            "ScreenCapture",
+            width, height, density,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            imageReader.surface, null, null
+        )
     }
 
-    private fun <T> throttleLatest(
-        destinationFunction: (T) -> Unit
-    ): (T) -> Unit {
-        var throttleJob: Job? = null
-        var latestParam: T
-        return { param: T ->
-            latestParam = param
-            if (throttleJob?.isCompleted != false) {
-                throttleJob = lifecycleScope.launch {
-                    delay(100L)
-                    destinationFunction(latestParam)
-                }
-            }
-        }
-    }
-
+    // Run barcode processing
     private fun processImage(reader: ImageReader) {
         val image = reader.acquireLatestImage()
         if (image != null) {
@@ -137,61 +113,18 @@ class MainActivity : ComponentActivity() {
                     barcodes.forEach {
                         val data = it.rawValue
                         if (data != null && /*data.contains("bevitouchless.co") &&*/ data != lastSentUrl) {
-                            println("New URL: $data")
-                            val jsonData: JSONObject = JSONObject()
-                            jsonData.put("token", env.get("SET_TOKEN"))
-                            jsonData.put(env.get("KEY"), data)
-
-                            val body = jsonData.toString().toRequestBody(jsonType)
-                            val request = Request.Builder()
-                                .url(env.get("KV_STORE_URL"))
-                                .post(body)
-                                .build()
-
-                            httpClient.newCall(request).enqueue(object : Callback {
-                                override fun onFailure(call: Call, e: IOException) {
-                                    println("Request failed!")
-                                    e.printStackTrace()
-                                }
-
-                                override fun onResponse(call: Call, response: Response) {
-                                    println("Response: ${response.isSuccessful}")
-                                }
-                            })
+                            networkManager.send(data)
                             lastSentUrl = data
                         }
                     }
                 }
-                .addOnFailureListener {
-                    print("failed")
-                }
             image.close()
         }
-    }
-    private val throttledProcessImage = throttleLatest(this::processImage)
-
-    private fun startVirtualDisplay() {
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 32)
-        imageReader.setOnImageAvailableListener(throttledProcessImage, null)
-
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "ScreenCapture",
-            width, height, density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader.surface, null, null
-        )
     }
 
     override fun onDestroy() {
         super.onDestroy()
         virtualDisplay?.release()
         mediaProjection?.stop()
-    }
-}
-
-@Composable
-fun TakeScreenshot(modifier: Modifier = Modifier, onStartCapture: () -> Unit) {
-    Button(onClick = onStartCapture) {
-        Text("Start")
     }
 }
